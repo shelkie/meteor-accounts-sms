@@ -13,7 +13,7 @@ Accounts.registerLoginHandler('sms', function (options) {
   if (!options.sms) return;
 
   check(options, {
-    sms: true,
+    sms: Boolean,
     phone: MatchEx.String(1),
     code: MatchEx.String(1)
   });
@@ -92,13 +92,13 @@ Accounts.sms.sendVerificationCode = function (phone) {
  * @param code
  */
 Accounts.sms.verifyCode = function (phone, code) {
-  var user = Meteor.users.findOne({phone: phone});
+  var user = Meteor.users.findOne({phone: phone}, {fields: {_id: 1}});
   if (!user) throw new Meteor.Error('Invalid phone number');
 
   var validCode = codes.findOne({phone: phone, code: code});
   if (!validCode) throw new Meteor.Error('Invalid verification code');
 
-  // Clear the verification code after a succesful login.
+  // Clear the verification code after a successful login.
   codes.remove({phone: phone});
   return {userId: user._id};
 };
