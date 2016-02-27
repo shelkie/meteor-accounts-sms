@@ -25,7 +25,7 @@ Accounts.registerLoginHandler('sms', function (options) {
   return Accounts.sms.verifyCode(options.phone, options.code);
 });
 
-// Defaults
+// Defaults accounts sms options
 Accounts.sms.options = {
   verificationRetriesWaitTime: 10 * 60 * 1000,
   verificationWaitTime: 20 * 1000,
@@ -39,29 +39,6 @@ Accounts.sms.options = {
       return 'Welcome your invitation code is: ' + code;
     }
   }
-};
-
-/**
- * Check whether the given code is the defined master code
- * @param code
- * @returns {*|boolean}
- */
-var isMasterCode = function (code) {
-  return code && Accounts.sms.options.phoneVerificationMasterCode &&
-    code == Accounts.sms.options.phoneVerificationMasterCode;
-};
-
-/**
- * Get random phone verification code
- * @param length
- * @returns {string}
- */
-var getRandomCode = function (length) {
-  length = length || 4;
-  // For length of 4 - powerLength = 1000
-  let powerLength = Math.pow(10, length - 1);
-  // For length of 4 - result = 9000 * Randon(0,1) + 1000;
-  return Math.floor(Math.random() * 9 * powerLength) + powerLength;
 };
 
 
@@ -170,10 +147,37 @@ Accounts.sms.verifyCode = function (phone, code) {
   var user = Meteor.users.findOne({phone: phone}, {fields: {_id: 1}});
   if (!user) throw new Meteor.Error('Invalid phone number');
 
+  // TODO add check for too many gueses per phone number
   var validCode = Codes.findOne({phone: phone, code: code});
   if (!validCode) throw new Meteor.Error('Invalid verification code');
 
   // Clear the verification code after a successful login.
   Codes.remove({phone: phone});
   return {userId: user._id};
+};
+
+
+/****** Helper functions ****/
+
+/**
+ * Check whether the given code is the defined master code
+ * @param code
+ * @returns {*|boolean}
+ */
+var isMasterCode = function (code) {
+  return code && Accounts.sms.options.phoneVerificationMasterCode &&
+    code == Accounts.sms.options.phoneVerificationMasterCode;
+};
+
+/**
+ * Get random phone verification code
+ * @param length
+ * @returns {string}
+ */
+var getRandomCode = function (length) {
+  length = length || 4;
+  // For length of 4 - powerLength = 1000
+  let powerLength = Math.pow(10, length - 1);
+  // For length of 4 - result = 9000 * Randon(0,1) + 1000;
+  return Math.floor(Math.random() * 9 * powerLength) + powerLength;
 };
