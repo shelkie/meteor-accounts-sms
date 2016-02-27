@@ -11,6 +11,7 @@ Package.onUse(function (api) {
   api.use([
     'random',
     'jperl:match-ex@1.0.0',
+    'underscore',
     'mongo'
   ], 'server');
 

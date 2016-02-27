@@ -1,4 +1,8 @@
-var codes = new Mongo.Collection('meteor_accounts_sms');
+var Codes = new Mongo.Collection('meteor_accounts_sms');
+// Added index for phone number
+Codes._ensureIndex('phone',
+  {unique: 1});
+
 
 Meteor.methods({
   'accounts-sms.sendVerificationCode': function (phone) {
@@ -20,6 +24,46 @@ Accounts.registerLoginHandler('sms', function (options) {
 
   return Accounts.sms.verifyCode(options.phone, options.code);
 });
+
+// Defaults
+Accounts.sms.options = {
+  verificationRetriesWaitTime: 10 * 60 * 1000,
+  verificationWaitTime: 20 * 1000,
+  verificationMaxRetryCounts: 5,
+  verificationCodeLength: 4,
+  // adminPhoneNumbers: [], Optional - fields for admin phone numbers - not doing phone validation
+  // phoneVerificationMasterCode: XXXX, Optional - allow to define master code.
+  phoneTemplate: {
+    from: '+972545999999',  // Sample number
+    text: function (code) {
+      return 'Welcome your invitation code is: ' + code;
+    }
+  }
+};
+
+/**
+ * Check whether the given code is the defined master code
+ * @param code
+ * @returns {*|boolean}
+ */
+var isMasterCode = function (code) {
+  return code && Accounts.sms.options.phoneVerificationMasterCode &&
+    code == Accounts.sms.options.phoneVerificationMasterCode;
+};
+
+/**
+ * Get random phone verification code
+ * @param length
+ * @returns {string}
+ */
+var getRandomCode = function (length) {
+  length = length || 4;
+  // For length of 4 - powerLength = 1000
+  let powerLength = Math.pow(10, length - 1);
+  // For length of 4 - result = 9000 * Randon(0,1) + 1000;
+  return Math.floor(Math.random() * 9 * powerLength) + powerLength;
+};
+
 
 /**
  * You can set the twilio from, sid and key and this
@@ -67,27 +111,58 @@ Accounts.sms.configure = function (options) {
 Accounts.sms.sendVerificationCode = function (phone) {
   if (!Accounts.sms.client) throw new Meteor.Error('accounts-sms has not been configured');
 
-  var lookup = Accounts.sms.client.lookup(phone);
+  let lookup = Accounts.sms.client.lookup(phone);
   if (lookup.carrier && lookup.carrier.type !== 'mobile') {
     throw new Meteor.Error('not a mobile number');
   }
 
-  var code = Math.floor(Random.fraction() * 10000) + '';
+
+  // Check that haven't send too many verification codes
+  let codeObj = Codes.findOne({phone: phone});
+  let retryObject = (codeObj && codeObj.retry) || {numOfRetries: 0};
+
+  // Check if last retry was too soon
+  let smsOptions = Accounts.sms.options;
+  const curTime = new Date();
+  let nextRetryDate = retryObject && retryObject.lastRetry &&
+    new Date(retryObject.lastRetry.getTime() + smsOptions.waitTimeBetweenRetries);
+  if (nextRetryDate && nextRetryDate > curTime) {
+    const waitTimeInSec = Math.ceil(Math.abs((nextRetryDate - curTime) / 1000)),
+      errMsg = `SendVerificationCode: Too often retries, try again in ${waitTimeInSec} seconds.`;
+    throw new Meteor.Error(errMsg);
+  }
+  // Check if there where too many retries
+  if (retryObject.numOfRetries > smsOptions.verificationMaxRetryCounts) {
+    // Check if passed enough time since last retry
+    var waitTimeBetweenMaxRetries = smsOptions.verificationRetriesWaitTime;
+    nextRetryDate = new Date(retryObject.lastRetry.getTime() + waitTimeBetweenMaxRetries);
+    if (nextRetryDate > curTime) {
+      var waitTimeInMin = Math.ceil(Math.abs((nextRetryDate - curTime) / 60000)),
+        errMsg = `SendVerificationCode: Too many retries, try again in ${waitTimeInMin} minutes.`;
+      throw new Error(errMsg);
+    }
+  }
+  // Update retry obj
+  retryObject.lastRetry = curTime;
+  retryObject.numOfRetries++;
+
+  let code = getRandomCode(smsOptions.verificationCodeLength);
 
   // Clear out existing codes
-  codes.remove({phone: phone});
+  Codes.remove({phone: phone});
 
   // Generate a new code.
-  codes.insert({phone: phone, code: code});
+  Codes.insert({phone: phone, code: code, retry: retryObject});
 
   Accounts.sms.client.sendSMS({
     to: phone,
-    body: 'Your verification code is ' + code
+    from: smsOptions.phoneTemplate.from,
+    body: smsOptions.phoneTemplate.text(code)
   });
 };
 
 /**
- * Send a 4 digit verification sms with twilio.
+ * Verify that the given code is valid
  * @param phone
  * @param code
  */
@@ -95,10 +170,10 @@ Accounts.sms.verifyCode = function (phone, code) {
   var user = Meteor.users.findOne({phone: phone}, {fields: {_id: 1}});
   if (!user) throw new Meteor.Error('Invalid phone number');
 
-  var validCode = codes.findOne({phone: phone, code: code});
+  var validCode = Codes.findOne({phone: phone, code: code});
   if (!validCode) throw new Meteor.Error('Invalid verification code');
 
   // Clear the verification code after a successful login.
-  codes.remove({phone: phone});
+  Codes.remove({phone: phone});
   return {userId: user._id};
 };
