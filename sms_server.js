@@ -1,3 +1,5 @@
+import Future from 'fibers/future';
+
 var Codes = new Mongo.Collection('meteor_accounts_sms');
 // Added index for phone number
 Codes._ensureIndex('phone',
@@ -21,6 +23,8 @@ Accounts.registerLoginHandler('sms', function (options) {
     phone: MatchEx.String(1),
     code: MatchEx.String(1)
   });
+
+    options.code = parseInt(options.code);
 
   return Accounts.sms.verifyCode(options.phone, options.code);
 });
@@ -87,11 +91,19 @@ Accounts.sms.configure = function (options) {
  */
 Accounts.sms.sendVerificationCode = function (phone) {
   if (!Accounts.sms.client) throw new Meteor.Error('accounts-sms has not been configured');
-
-  let lookup = Accounts.sms.client.lookup(phone);
-  if (lookup.carrier && lookup.carrier.type !== 'mobile') {
-    throw new Meteor.Error('not a mobile number');
+  let lookup = null;
+  try {
+    lookup = Accounts.sms.client.lookup(phone, {Type: 'carrier'});
+  }catch(err){
+    throw new Meteor.Error(404, "Couldn't validate phone number");
   }
+
+  if (lookup.carrier && lookup.carrier.type && lookup.carrier.type !== 'mobile') {
+    throw new Meteor.Error(400, 'Not a mobile number');
+  }
+
+  // Make sure we're using the standard format
+  phone = lookup.phone_number;
 
 
   // Check that haven't send too many verification codes
@@ -131,11 +143,23 @@ Accounts.sms.sendVerificationCode = function (phone) {
   // Generate a new code.
   Codes.insert({phone: phone, code: code, retry: retryObject});
 
+    let future = new Future();
+
   Accounts.sms.client.sendSMS({
     to: phone,
     from: smsOptions.phoneTemplate.from,
     body: smsOptions.phoneTemplate.text(code)
+  }, function(err, result){
+      if (err){
+          logger.error('Twilio error:', err);
+          future.return(err);
+      }else{
+          future.return(phone);
+          //future.return(result);
+      }
   });
+
+    return future.wait();
 };
 
 /**
@@ -144,12 +168,19 @@ Accounts.sms.sendVerificationCode = function (phone) {
  * @param code
  */
 Accounts.sms.verifyCode = function (phone, code) {
-  var user = Meteor.users.findOne({phone: phone}, {fields: {_id: 1}});
-  if (!user) throw new Meteor.Error('Invalid phone number');
 
   // TODO add check for too many gueses per phone number
   var validCode = Codes.findOne({phone: phone, code: code});
   if (!validCode) throw new Meteor.Error('Invalid verification code');
+
+  var user = Meteor.users.findOne({phone: phone}, {fields: {_id: 1}});
+  if (!user){
+      user = {};
+      user._id = Meteor.users.insert({
+          phone: phone,
+          createdAt: new Date()
+      });
+  }
 
   // Clear the verification code after a successful login.
   Codes.remove({phone: phone});

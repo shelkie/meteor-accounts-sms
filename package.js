@@ -8,11 +8,13 @@ Package.describe({
 Package.onUse(function (api) {
   api.versionsFrom('1.0');
 
+  api.use(['ecmascript'], 'server');
+
   api.use([
     'random',
     'jperl:match-ex@1.0.0',
     'underscore',
-    'mongo'
+    'mongo',
   ], 'server');
 
   api.use([
