@@ -93,7 +93,7 @@ Accounts.sms.sendVerificationCode = function (phone) {
   if (!Accounts.sms.client) throw new Meteor.Error('accounts-sms has not been configured');
   let lookup = null;
   try {
-    lookup = Accounts.sms.client.lookup(phone, {Type: 'carrier'});
+    lookup = Accounts.sms.client.lookup(phone); //{Type: 'carrier'} // Carrier info is not always accurate. Eg - some mobile lines appear as type: 'voip'
   }catch(err){
     throw new Meteor.Error(404, "Couldn't validate phone number");
   }
