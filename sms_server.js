@@ -187,6 +187,14 @@ Accounts.sms.verifyCode = function (phone, code) {
   return {userId: user._id};
 };
 
+// Just check the code, without adding a new user
+Accounts.sms.checkCode = function(phone, code){
+  var validCode = Codes.findOne({phone: phone, code: code});
+  if (!validCode) throw new Meteor.Error('Invalid verification code');
+  Codes.remove({phone: phone});
+  return true;
+};
+
 
 /****** Helper functions ****/
 
