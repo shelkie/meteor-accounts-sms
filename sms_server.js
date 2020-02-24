@@ -151,8 +151,9 @@ Accounts.sms.sendVerificationCode = function (phone) {
     body: smsOptions.phoneTemplate.text(code)
   }, function(err, result){
       if (err){
-          logger.error('Twilio error:', err);
+          logger.error('Twilio error:', err.message || err);
           future.return(err);
+          //throw new Meteor.Error(err.status,err.message);
       }else{
           future.return(phone);
           //future.return(result);
